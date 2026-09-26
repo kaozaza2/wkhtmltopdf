@@ -126,6 +126,28 @@ jobs:
       - name: Smoke test
         run: ./tests/run-smoke-tests.sh ./bin
 
+      - name: Package
+        if: always()
+        run: |
+          set -eux
+          # Deliberately not gated on the smoke test: a tarball built here is
+          # still useful for diagnosing a failure. What it must never be is
+          # mistaken for a supported release -- see docs/status.md and the
+          # BUILD-INFO.txt that make-dist.sh writes into every artifact.
+          if [ -x ./bin/wkhtmltopdf ]; then
+            ./scripts/make-dist.sh ./bin "out/wkhtmltox-${{ matrix.runner }}.tar.gz"
+          else
+            echo "::warning::nothing to package"
+          fi
+
+      - name: Upload build
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wkhtmltox-${{ matrix.runner }}
+          path: out/*.tar.gz*
+          if-no-files-found: warn
+
   # ---------------------------------------------------------------------------
   # Distribution matrix, in real containers, on amd64. This is what catches
   # "builds on Ubuntu, breaks on Fedora/openSUSE" -- library version skew,
@@ -216,6 +238,24 @@ jobs:
 
       - name: Smoke test
         run: ./tests/run-smoke-tests.sh ./bin
+
+      - name: Package
+        if: always()
+        run: |
+          set -eux
+          if [ -x ./bin/wkhtmltopdf ]; then
+            ./scripts/make-dist.sh ./bin "out/wkhtmltox-${{ matrix.name }}.tar.gz"
+          else
+            echo "::warning::nothing to package"
+          fi
+
+      - name: Upload build
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wkhtmltox-${{ matrix.name }}
+          path: out/*.tar.gz*
+          if-no-files-found: warn
 
   # ---------------------------------------------------------------------------
   # musl / Alpine: NOT SUPPORTED, and deliberately not given a CI job.
@@ -319,7 +359,16 @@ jobs:
               file bin/wkhtmltopdf bin/libwkhtmltox.so
               ccache --show-stats || true
               ./tests/run-smoke-tests.sh ./bin
+              ./scripts/make-dist.sh ./bin /src/out/wkhtmltox-armhf.tar.gz
             '
+
+      - name: Upload build
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wkhtmltox-armhf
+          path: out/*.tar.gz*
+          if-no-files-found: warn
 
   # ---------------------------------------------------------------------------
   # Guard rail: a Qt 6 build must fail with our explanatory message rather than

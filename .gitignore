@@ -27,3 +27,4 @@ moc_*.*
 tests/*.pdf
 tests/*.txt
 .qmake*
+out/
