@@ -1,4 +1,8 @@
 [submodule "qt"]
   path   = qt
-  url    = ../qt.git
+  # Absolute rather than the original relative "../qt.git": the relative form
+  # only resolves for checkouts living under the wkhtmltopdf/ organisation, so
+  # it breaks for anyone cloning this fork. Only needed for the legacy static
+  # Qt 4 build -- the supported dynamic Qt 5 + QtWebKit build does not use it.
+  url    = https://github.com/wkhtmltopdf/qt.git
   branch = wk_4.8.7
