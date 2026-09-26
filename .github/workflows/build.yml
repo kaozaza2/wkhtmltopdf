@@ -85,15 +85,33 @@ jobs:
 
       - name: Report environment
         run: |
-          set -eux
+          set -eu
           uname -m
           . /etc/os-release && echo "$PRETTY_NAME"
-          qmake --version
+
+      - name: Locate Qt 5 qmake
+        run: |
+          set -eu
+          # Distributions disagree about where the Qt 5 qmake lives: Debian
+          # and Ubuntu route it through qtchooser, Fedora ships it under
+          # /usr/lib/qt5/bin, and images where Qt 6 is the default may not put
+          # Qt 5's on PATH at all. Resolve it explicitly rather than assuming
+          # a bare `qmake` is Qt 5.
+          for c in qmake qmake-qt5 /usr/lib/qt5/bin/qmake /usr/lib/qt5/bin/qmake-qt5; do
+            if command -v "$c" >/dev/null 2>&1 && "$c" --version 2>&1 | grep -qE 'Qt version 5'; then
+              echo "QMAKE=$c" >> "$GITHUB_ENV"
+              "$c" --version
+              exit 0
+            fi
+          done
+          echo "::error::no Qt 5 qmake found"
+          echo "PATH=$PATH"
+          exit 1
 
       - name: Build
         run: |
           set -eux
-          qmake CONFIG+=release
+          "$QMAKE" CONFIG+=release
           make -j"$(nproc)"
 
       - name: Smoke test
@@ -149,15 +167,33 @@ jobs:
 
       - name: Report environment
         run: |
-          set -eux
+          set -eu
           uname -m
           cat /etc/os-release
-          qmake --version
+
+      - name: Locate Qt 5 qmake
+        run: |
+          set -eu
+          # Distributions disagree about where the Qt 5 qmake lives: Debian
+          # and Ubuntu route it through qtchooser, Fedora ships it under
+          # /usr/lib/qt5/bin, and images where Qt 6 is the default may not put
+          # Qt 5's on PATH at all. Resolve it explicitly rather than assuming
+          # a bare `qmake` is Qt 5.
+          for c in qmake qmake-qt5 /usr/lib/qt5/bin/qmake /usr/lib/qt5/bin/qmake-qt5; do
+            if command -v "$c" >/dev/null 2>&1 && "$c" --version 2>&1 | grep -qE 'Qt version 5'; then
+              echo "QMAKE=$c" >> "$GITHUB_ENV"
+              "$c" --version
+              exit 0
+            fi
+          done
+          echo "::error::no Qt 5 qmake found"
+          echo "PATH=$PATH"
+          exit 1
 
       - name: Build
         run: |
           set -eux
-          qmake CONFIG+=release
+          "$QMAKE" CONFIG+=release
           make -j"$(nproc)"
 
       - name: Smoke test
