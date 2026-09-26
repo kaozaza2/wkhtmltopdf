@@ -29,6 +29,31 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------------
+  # Lint the workflow definitions themselves. A malformed workflow is rejected
+  # by GitHub before any job is created, so the failure is a 0-second run with
+  # no useful output in the job list -- easy to miss. This catches it instead.
+  #
+  # Only build.yml is checked. official.yml deliberately still references
+  # runner labels that no longer exist, because it records the legacy static
+  # pipeline as it actually was.
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint workflow files
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+      - name: Validate build.yml
+        run: |
+          set -eux
+          curl -sSL -o actionlint.tgz \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          tar xzf actionlint.tgz actionlint
+          ./actionlint .github/workflows/build.yml
+
+  # ---------------------------------------------------------------------------
   # Native runners: the primary gate. Covers both amd64 and arm64.
   # ---------------------------------------------------------------------------
   build:
@@ -47,9 +72,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        # The pinned Qt 4.8.7 submodule is only needed for the legacy static
-        # build; the dynamic build below must not depend on it.
-        submodules: false
+        with:
+          # The pinned Qt 4.8.7 submodule is only needed for the legacy static
+          # build; the dynamic build below must not depend on it.
+          submodules: false
 
       - name: Install packages
         run: |
@@ -102,7 +128,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        submodules: false
+        with:
+          submodules: false
 
       - name: Install packages (Debian/Ubuntu)
         if: matrix.manager == 'apt'
@@ -152,7 +179,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        submodules: false
+        with:
+          submodules: false
 
       - name: Install packages
         run: apk add --no-cache g++ make qt5-qtbase-dev qt5-qtsvg-dev qt5-qtxmlpatterns-dev qt5-qtwebkit-dev qt5-qtprintsupport-dev fontconfig font-dejavu poppler-utils
@@ -194,7 +222,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        submodules: false
+        with:
+          submodules: false
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -233,7 +262,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        submodules: false
+        with:
+          submodules: false
       - name: Install Qt 6
         run: |
           set -eux
