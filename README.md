@@ -22,6 +22,14 @@ make -j"$(nproc)"
 Binaries are written to `./bin`. The pinned Qt 4.8.7 submodule is only needed
 for the legacy static build and is not required for the above.
 
+> **Heads up:** a build against a *stock* QtWebKit silently ignores 53
+> command-line switches — all of `--header-*` / `--footer-*`, the outline and
+> bookmark family, `--enable-forms`, `--page-offset`, `--print-media-type`,
+> `--disable-smart-shrinking` and more. Those live in wkhtmltopdf's Qt
+> patches, not in wkhtmltopdf. The binary warns on stderr but still exits 0
+> and still writes a PDF. See [docs/building.md](docs/building.md) and
+> [docs/status.md](docs/status.md).
+
 Per-distribution package lists, build options, and the reasoning behind dynamic
 rather than static linking are in [docs/building.md](docs/building.md).
 

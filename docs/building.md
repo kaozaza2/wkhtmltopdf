@@ -62,6 +62,22 @@ git clone --recurse-submodules ...   # only if you want the static Qt 4 build
 git clone ...                        # otherwise, skip it entirely
 ```
 
+## ⚠ This build has a reduced feature set
+
+Building against a distribution's stock QtWebKit **silently ignores 53
+command-line switches**, because they are implemented in wkhtmltopdf's patches
+to Qt rather than in wkhtmltopdf. The whole `--header-*` / `--footer-*` family,
+the outline/bookmark switches, `--enable-forms`, `--page-offset`,
+`--print-media-type` and `--disable-smart-shrinking` are among them.
+
+wkhtmltopdf warns on stderr but **still exits 0 and still writes a PDF**, so
+automation will report success. `tests/run-smoke-tests.sh` detects this and
+prints a warning banner.
+
+Use this build for embedding, for `--disable-javascript` conversion, or as a
+CI baseline. Do **not** use it if you rely on headers, footers, bookmarks,
+forms or print CSS — for that you need a patched Qt. See `status.md`.
+
 ## Why dynamic and not static?
 
 The released 0.12.6 binaries link Qt statically, which sounds like it should

@@ -56,8 +56,17 @@ pass() {
     echo "ok: $*"
 }
 
+skip() {
+    echo "skip: $*"
+}
+
 need() {
     command -v "$1" >/dev/null 2>&1 || fail "required tool not found: $1"
+}
+
+# Assertion that only holds for a build against the patched Qt.
+SKIP_PATCHED_QT() {
+    skip "skipped: needs the patched Qt (see the warning above)"
 }
 
 # assert_pdf_text <pdf> <expected-marker> [forbidden-marker]
@@ -118,6 +127,45 @@ if ! _out=$("$WKTIMG" --version 2>&1); then
 fi
 pass "both binaries run and report a version"
 
+# --- 1b. detect a build against unpatched Qt -------------------------------
+# A large part of wkhtmltopdf's command line -- all of the header/footer and
+# outline switches, --enable-forms, --page-offset, --print-media-type,
+# --disable-smart-shrinking and more -- is implemented in wkhtmltopdf's patches
+# to Qt, not in wkhtmltopdf itself. Against a stock QtWebKit those switches are
+# *silently ignored*: the binary warns on stderr, still exits 0, and still
+# writes a PDF. Anything automating wkhtmltopdf would see that as success.
+#
+# So probe for it once, report it loudly, and skip the assertions that cannot
+# hold. See docs/status.md for why this is not simply a bug to fix.
+UNPATCHED=""
+_probe=$("$WKT" --outline "$SMOKE/basic.html" "$WORK/probe.pdf" 2>&1 >/dev/null || true)
+case "$_probe" in
+    *"not supported when using unpatched qt"*) UNPATCHED=1 ;;
+esac
+
+if [ -n "$UNPATCHED" ]; then
+    cat >&2 <<'EOF'
+
+===========================================================================
+ WARNING: built against UNPATCHED Qt -- reduced feature set
+===========================================================================
+ This build links a stock QtWebKit, so every switch implemented in
+ wkhtmltopdf's Qt patches is ignored: the header/footer family, the
+ outline/bookmark family, --enable-forms, --page-offset,
+ --print-media-type, --disable-smart-shrinking, --image-dpi,
+ --viewport-size, --xsl-style-sheet and the TOC switches.
+
+ They are ignored *silently* -- exit status 0, a PDF still written.
+ Assertions for them are skipped below. Do not use this build if you
+ rely on any of them. See docs/status.md.
+===========================================================================
+
+EOF
+    SKIP_PATCHED_QT
+else
+    pass "built against patched Qt (header/footer, outline and forms switches active)"
+fi
+
 # --- 2. basic HTML -> PDF, with JavaScript executed -------------------------
 "$WKT" --enable-javascript "$SMOKE/basic.html" "$WORK/basic.pdf" \
     || fail "wkhtmltopdf failed to render basic.html"
@@ -145,34 +193,48 @@ assert_pdf_text "$WORK/nojs.pdf" "MARKER-JS-TEXT" "MARKER-JS-TEXT-RENDERED"
 assert_pdf_text "$WORK/a4.pdf" "MARKER-BODY-TEXT"
 
 # --- 5. multi page + header/footer ------------------------------------------
-cat >"$WORK/hdr.html" <<'EOF'
-<html><body><div style="font-size:8pt; text-align:center">MARKER-HEADER</div></body></html>
-EOF
-cat >"$WORK/ftr.html" <<'EOF'
-<html><body><div style="font-size:8pt; text-align:center">MARKER-FOOTER page [page]</div></body></html>
-EOF
 # Header/footer URLs go through MultiPageLoader::guessUrlFromString, which turns
 # a plain absolute path into a local file URL for us.
-"$WKT" \
-    --header-html "$WORK/hdr.html" \
-    --footer-html "$WORK/ftr.html" \
-    --header-spacing 5 --footer-spacing 5 \
-    "$SMOKE/multipage.html" "$WORK/multi.pdf" \
-    || fail "wkhtmltopdf failed with header/footer"
-assert_pdf_text "$WORK/multi.pdf" "MARKER-PAGE-ONE"
-assert_pdf_text "$WORK/multi.pdf" "MARKER-PAGE-THREE"
-assert_pdf_text "$WORK/multi.pdf" "MARKER-HEADER"
-assert_pdf_text "$WORK/multi.pdf" "MARKER-FOOTER"
-# Assert a minimum rather than an exact count: whether a trailing page-break
-# emits a blank page is a WebKit detail that has changed between versions, and
-# that is not what this test is for. Collapsing to a single page would still
-# fail here.
-assert_pdf_pages_min "$WORK/multi.pdf" 3
+if [ -n "$UNPATCHED" ]; then
+    # Still render the multi-page document: page breaking itself works, and it
+    # is worth proving. Only the header/footer assertions are dropped.
+    "$WKT" "$SMOKE/multipage.html" "$WORK/multi.pdf" \
+        || fail "wkhtmltopdf failed to render a multi page document"
+    assert_pdf_text "$WORK/multi.pdf" "MARKER-PAGE-ONE"
+    assert_pdf_text "$WORK/multi.pdf" "MARKER-PAGE-THREE"
+    assert_pdf_pages_min "$WORK/multi.pdf" 3
+    SKIP_PATCHED_QT
+else
+    cat >"$WORK/hdr.html" <<'EOF'
+<html><body><div style="font-size:8pt; text-align:center">MARKER-HEADER</div></body></html>
+EOF
+    cat >"$WORK/ftr.html" <<'EOF'
+<html><body><div style="font-size:8pt; text-align:center">MARKER-FOOTER page [page]</div></body></html>
+EOF
+    "$WKT" \
+        --header-html "$WORK/hdr.html" \
+        --footer-html "$WORK/ftr.html" \
+        --header-spacing 5 --footer-spacing 5 \
+        "$SMOKE/multipage.html" "$WORK/multi.pdf" \
+        || fail "wkhtmltopdf failed with header/footer"
+    assert_pdf_text "$WORK/multi.pdf" "MARKER-PAGE-ONE"
+    assert_pdf_text "$WORK/multi.pdf" "MARKER-PAGE-THREE"
+    assert_pdf_text "$WORK/multi.pdf" "MARKER-HEADER"
+    assert_pdf_text "$WORK/multi.pdf" "MARKER-FOOTER"
+    # Assert a minimum rather than an exact count: whether a trailing
+    # page-break emits a blank page is a WebKit detail that has changed
+    # between versions. Collapsing to a single page would still fail here.
+    assert_pdf_pages_min "$WORK/multi.pdf" 3
+fi
 
 # --- 6. bookmarks / outline --------------------------------------------------
-"$WKT" --outline "$SMOKE/multipage.html" "$WORK/outline.pdf" \
-    || fail "wkhtmltopdf failed with --outline"
-assert_pdf_text "$WORK/outline.pdf" "MARKER-PAGE-ONE"
+if [ -n "$UNPATCHED" ]; then
+    SKIP_PATCHED_QT
+else
+    "$WKT" --outline "$SMOKE/multipage.html" "$WORK/outline.pdf" \
+        || fail "wkhtmltopdf failed with --outline"
+    assert_pdf_text "$WORK/outline.pdf" "MARKER-PAGE-ONE"
+fi
 
 # --- 7. reading HTML from stdin ----------------------------------------------
 # Exercises a code path (readArgsFromStdin) that has broken before.

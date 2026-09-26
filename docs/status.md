@@ -147,6 +147,60 @@ Rendering fidelity against the old static binaries is close but not identical,
 because the unpatched QtWebKit 5.212 is not the patched Qt 4.8.7. The upside
 is a much less dated engine: 2016 rather than 2011.
 
+### The dynamic build silently drops more than half the command line
+
+This is the single most important thing to know about building against a stock
+QtWebKit, and it is easy to miss because nothing fails.
+
+Much of wkhtmltopdf is not in wkhtmltopdf. The header/footer machinery, PDF
+bookmarks, form filling, page offsets, print-CSS handling and the
+"intelligent shrinking" feature all live in **wkhtmltopdf's patches to Qt**.
+Build against a stock QtWebKit and **53 command-line switches are ignored**:
+
+* the entire `--header-*` and `--footer-*` family (14 switches)
+* the entire outline/bookmark family — `--outline`, `--outline-depth`,
+  `--dump-outline`, `--default-header`
+* `--enable-forms` / `--disable-forms` (AcroForms)
+* `--page-offset`
+* `--print-media-type` (print stylesheets)
+* `--disable-smart-shrinking` / `--enable-smart-shrinking`
+* `--image-dpi`, `--image-quality`, `--viewport-size`, `--no-pdf-compression`
+* `--xsl-style-sheet`, `--replace`, and the TOC switches
+* in wkhtmltoimage: `--transparent`, `--disable-smart-width`
+
+The switches are not rejected. wkhtmltopdf prints
+
+```
+The switch --header-html is not supported when using unpatched qt and will be ignored.
+```
+
+on stderr, then **exits 0 and writes a PDF anyway**. A CI pipeline, a Rails
+task or a report generator would report success. That is the worst shape a
+missing feature can have, and it is why `tests/run-smoke-tests.sh` probes for
+this and prints a prominent warning.
+
+`--disable-smart-shrinking` and `--print-media-type` in particular appear in a
+large share of real-world wkhtmltopdf command lines, so this is not a
+long-tail caveat.
+
+**Consequence:** a stock-QtWebKit build is a reduced wkhtmltopdf, not
+wkhtmltopdf. It is useful for embedding, for `--disable-javascript` document
+conversion, and as a build/CI baseline — but it is not a drop-in replacement
+for 0.12.6 if you use headers, footers, bookmarks, forms or print CSS.
+
+Getting the full feature set back means one of:
+
+1. **Build the patched Qt** from the `qt` submodule. Full fidelity, but it is
+   Qt 4.8.7 with a 2011 WebKit: no modern CSS (`grid`, `calc`, custom
+   properties), and unpatched 2011-era WebKit security holes.
+2. **Port the patches to QtWebKit 5.212.** Full fidelity, a 2016 engine,
+   modern distributions. This is the real answer, and it is the "rebaseline
+   the patches" work described under Future Plans. It is a substantial job, but
+   it is well-defined and it is the only option that does not trade features
+   against platforms.
+3. **Replace the engine** (QtWebEngine, headless Chromium). Modern everything,
+   but no equivalent of the header/footer/outline model — see below.
+
 ### QtWebKit availability is shrinking
 
 This is the uncomfortable part, and it is worth stating plainly rather than
@@ -188,7 +242,15 @@ source (or replacing the engine) becomes the only option left.
 
 ### If you want Apple Silicon, Windows ARM64, or modern CSS
 
-That means a new engine, and the options are:
+Those are two separate problems, and conflating them leads to bad plans:
+
+* **Modern CSS** comes from the engine's age, and is fixed by moving up the
+  WebKit line (option 1 or 2 above) rather than by changing platform.
+* **Apple Silicon / Windows ARM64** is a packaging-availability problem.
+  QtWebKit is published for Linux only, so no amount of build-system work
+  produces those binaries while the engine is QtWebKit.
+
+Reaching the missing platforms means a new engine, and the options are:
 
 1. **QtWebEngine** (Chromium). `QWebEnginePage::printToPdf` has no equivalent of
    wkhtmltopdf's header, footer, outline and per-object page-setup model, and
