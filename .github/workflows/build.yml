@@ -111,18 +111,20 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: Debian 13 (glibc 2.41)
-            image: debian:trixie
+          # Debian 12 (bookworm) is the last Debian release that still ships
+          # QtWebKit 5.212. Debian 13 (trixie) dropped the source package
+          # entirely, so "newest Debian" is not currently a target -- see
+          # docs/status.md.
+          - name: Debian 12 (bookworm, glibc 2.36)
+            image: debian:bookworm
             manager: apt
             packages: [qtbase5-dev, qtbase5-dev-tools, libqt5svg5-dev, libqt5xmlpatterns5-dev, libqt5webkit5-dev, libqt5printsupport5, build-essential, ca-certificates, fontconfig, fonts-dejavu-core, poppler-utils]
+          # QtPrintSupport ships inside qtbase on Fedora, so there is no
+          # separate -printsupport-devel package to ask for.
           - name: Fedora 42
             image: fedora:42
             manager: dnf
-            packages: [qt5-qtbase-devel, qt5-qtsvg-devel, qt5-qtxmlpatterns-devel, qt5-qtwebkit-devel, qt5-qtprintsupport-devel, gcc-c++, make, ca-certificates, fontconfig, dejavu-sans-fonts, poppler-utils]
-          - name: openSUSE Tumbleweed
-            image: opensuse/tumbleweed
-            manager: zypper
-            packages: [qt5-qtbase-devel, qt5-qtsvg-devel, qt5-qtxmlpatterns-devel, qt5-qtwebkit-devel, qt5-qtprintsupport-devel, gcc-c++, make, ca-certificates, fontconfig, dejavu-sans-fonts, poppler-utils]
+            packages: [qt5-qtbase-devel, qt5-qtsvg-devel, qt5-qtxmlpatterns-devel, qt5-qtwebkit-devel, gcc-c++, make, ca-certificates, fontconfig, dejavu-sans-fonts, poppler-utils]
     container:
       image: ${{ matrix.image }}
     steps:
@@ -145,12 +147,6 @@ jobs:
           set -eux
           dnf install -y ${{ join(matrix.packages, ' ') }}
 
-      - name: Install packages (openSUSE)
-        if: matrix.manager == 'zypper'
-        run: |
-          set -eux
-          zypper --non-interactive install ${{ join(matrix.packages, ' ') }}
-
       - name: Report environment
         run: |
           set -eux
@@ -168,38 +164,35 @@ jobs:
         run: ./tests/run-smoke-tests.sh ./bin
 
   # ---------------------------------------------------------------------------
-  # musl / Alpine. The old static "generic" Linux build never worked here
-  # because it was linked against glibc; a dynamically linked musl build fixes
-  # that and is the only sane way to support Alpine.
+  # musl / Alpine: NOT SUPPORTED, and deliberately not given a CI job.
+  #
+  # Alpine has never packaged QtWebKit -- there is no qt5-qtwebkit in v3.21 or
+  # edge, in main or community -- so there is nothing to build against. This is
+  # a change from what the old project claimed: the static "generic" Linux
+  # build never worked on Alpine anyway, because it was linked against glibc
+  # while Alpine uses musl.
+  #
+  # Supporting musl would mean building Qt 5 + QtWebKit 5.212 from source for
+  # musl, which is a much larger job than anything else in this workflow.
+  # Tracked in docs/status.md; do not add an Alpine job unless that has been
+  # done first.
   # ---------------------------------------------------------------------------
-  alpine:
-    name: Alpine 3.21 (musl)
+  musl-unavailable:
+    name: "musl/Alpine (unsupported - no QtWebKit package)"
     runs-on: ubuntu-24.04
-    container: alpine:3.21
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          submodules: false
-
-      - name: Install packages
-        run: apk add --no-cache g++ make qt5-qtbase-dev qt5-qtsvg-dev qt5-qtxmlpatterns-dev qt5-qtwebkit-dev qt5-qtprintsupport-dev fontconfig font-dejavu poppler-utils
-
-      - name: Report environment
+      - name: Confirm Alpine still has no QtWebKit
         run: |
-          set -eux
-          uname -m
-          cat /etc/os-release
-          qmake --version
-
-      - name: Build
-        run: |
-          set -eux
-          qmake CONFIG+=release
-          make -j"$(nproc)"
-
-      - name: Smoke test
-        run: ./tests/run-smoke-tests.sh ./bin
+          set -eu
+          for repo in main community; do
+            url="https://dl-cdn.alpinelinux.org/alpine/edge/$repo/x86_64/APKINDEX.tar.gz"
+            if curl -sSL "$url" | tar xzO APKINDEX 2>/dev/null \
+                 | grep -q '^P:qt5-qtwebkit'; then
+              echo "::notice::Alpine now packages qt5-qtwebkit -- an Alpine build may be possible after all"
+            else
+              echo "confirmed: no qt5-qtwebkit in Alpine edge/$repo"
+            fi
+          done
 
   # ---------------------------------------------------------------------------
   # 32-bit ARM (Raspberry Pi 1/Zero/3-class and other armhf devices).
@@ -228,13 +221,17 @@ jobs:
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
         with:
-          platforms: arm/v7
+          # "all" rather than "arm/v7": the narrower value did not reliably
+          # register a binfmt handler on the runner, and the container then
+          # died with "exec /usr/bin/bash: exec format error".
+          platforms: all
 
       - name: Build and test in an armhf container
         run: |
           set -eux
+          # bookworm, not trixie: trixie no longer ships QtWebKit at all.
           docker run --rm --platform linux/arm/v7 \
-            -v "$PWD:/src" -w /src debian:trixie bash -euxc '
+            -v "$PWD:/src" -w /src debian:bookworm bash -euxc '
               export DEBIAN_FRONTEND=noninteractive
               apt-get update
               apt-get install -y --no-install-recommends \
@@ -269,7 +266,11 @@ jobs:
           set -eux
           export DEBIAN_FRONTEND=noninteractive
           apt-get update
-          apt-get install -y --no-install-recommends qt6-base-dev qt6-tools-dev qt6-tools-dev-tools
+          # A compiler is required: without one qmake aborts with "Cannot run
+          # compiler 'g++'" before it ever evaluates common.pri, and the guard
+          # this job exists to test is never reached.
+          apt-get install -y --no-install-recommends \
+            build-essential qt6-base-dev qt6-tools-dev qt6-tools-dev-tools
       - name: Expect a helpful failure
         run: |
           set -eux

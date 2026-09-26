@@ -147,16 +147,44 @@ Rendering fidelity against the old static binaries is close but not identical,
 because the unpatched QtWebKit 5.212 is not the patched Qt 4.8.7. The upside
 is a much less dated engine: 2016 rather than 2011.
 
+### QtWebKit availability is shrinking
+
+This is the uncomfortable part, and it is worth stating plainly rather than
+discovering later. Building against each distribution's QtWebKit only works
+while that distribution still ships it, and several no longer do:
+
+| Distribution | QtWebKit 5.212 | Note |
+|--------------|-----------------|------|
+| Ubuntu 24.04 (noble) | yes | Builds and passes the smoke tests. |
+| Debian 12 (bookworm) | yes | Last Debian release with it. |
+| Debian 13 (trixie) | **no** | Source package removed. |
+| Fedora | yes | QtPrintSupport lives inside `qt5-qtbase-devel`. |
+| openSUSE Tumbleweed | **no** | Qt 5 devel packages dropped. |
+| Alpine (all branches) | **no** | Never packaged, in `main` or `community`. |
+
+So the "newest distribution" is frequently *not* buildable, which inverts the
+usual goal: the effort is now mostly about staying on the distros that still
+carry the module, and the set shrinks over time. Alpine and musl are out
+entirely -- the old project's claim that the static build could be made to work
+there was never true, since those binaries are glibc-linked.
+
+A distro dropping QtWebKit is a packaging decision, not something this project
+can override. When the last few distributions go, "keep building against distro
+QtWebKit" stops being a strategy, and building Qt 5 + QtWebKit 5.212 from
+source (or replacing the engine) becomes the only option left.
+
 ### Still to do
 
 * Layout-fidelity comparison against known-good 0.12.6 output, to quantify the
-  above rather than assume it.
-* An `armhf` cross build in CI is best-effort and non-blocking; a real one
-  needs a Qt cross mkspec, which distributions do not package. Prefer
+  fidelity difference rather than assume it.
+* The `armhf` job builds in an emulated container; a real cross build would
+  need a Qt cross mkspec, which distributions do not package. Prefer
   distribution packages for 32-bit ARM.
 * A CMake build, since qmake is deprecated and absent from Qt 6. Not required
-  while Qt 5 is the ceiling, but it is the thing that will matter if the
-  engine is ever replaced.
+  while Qt 5 is the ceiling, but it is what will matter if the engine is ever
+  replaced.
+* Track QtWebKit removals in Debian and Fedora. When Debian 12 and Fedora drop
+  it, decide between vendoring the module and replacing the engine.
 
 ### If you want Apple Silicon, Windows ARM64, or modern CSS
 

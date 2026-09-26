@@ -27,9 +27,29 @@ WKTIMG="$BIN_DIR/wkhtmltoimage"
 export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}"
 export QTWEBKIT_DISABLE_COMPOSITING_MODE=1
 
+# The binaries and libwkhtmltox.so are built side by side into ./bin, and the
+# link line records no rpath for it, so the loader cannot find the library from
+# the build tree unaided. The project's own `make install` man target works
+# around this the same way. Installed builds put the library on the default
+# search path instead, so this is only needed for an uninstalled build.
+LD_LIBRARY_PATH="$BIN_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export LD_LIBRARY_PATH
+
 fail() {
     echo "FAIL: $*" >&2
     exit 1
+}
+
+# Report *why* a binary would not start. The usual cause is a library the
+# loader cannot find, and "exit status 1" on its own tells you nothing.
+diagnose() {
+    _bin=$1
+    echo "--- ldd $_bin ---" >&2
+    ldd "$_bin" 2>&1 | sed 's/^/    /' >&2 || true
+    _missing=$(ldd "$_bin" 2>/dev/null | grep -c "not found" || true)
+    if [ "${_missing:-0}" -gt 0 ]; then
+        echo "--- $_missing library/ libraries not found by the loader ---" >&2
+    fi
 }
 
 pass() {
@@ -84,8 +104,18 @@ need pdfinfo
 [ -x "$WKTIMG" ] || fail "wkhtmltoimage not found or not executable at $WKTIMG"
 
 # --- 1. binaries start and report a version ---------------------------------
-"$WKT" --version >/dev/null 2>&1 || fail "wkhtmltopdf --version failed"
-"$WKTIMG" --version >/dev/null 2>&1 || fail "wkhtmltoimage --version failed"
+if ! _out=$("$WKT" --version 2>&1); then
+    echo "--- wkhtmltopdf --version output ---" >&2
+    echo "$_out" >&2
+    diagnose "$WKT"
+    fail "wkhtmltopdf --version failed"
+fi
+if ! _out=$("$WKTIMG" --version 2>&1); then
+    echo "--- wkhtmltoimage --version output ---" >&2
+    echo "$_out" >&2
+    diagnose "$WKTIMG"
+    fail "wkhtmltoimage --version failed"
+fi
 pass "both binaries run and report a version"
 
 # --- 2. basic HTML -> PDF, with JavaScript executed -------------------------

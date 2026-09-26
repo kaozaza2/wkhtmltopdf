@@ -32,11 +32,17 @@ Run the smoke tests with `./tests/run-smoke-tests.sh ./bin` (needs
 
 The supported targets are Linux distributions and architectures, built
 dynamically against each distribution's own Qt 5 + QtWebKit. CI covers
-Ubuntu, Debian, Fedora, openSUSE and Alpine (musl) on amd64 and arm64.
+Ubuntu 24.04 and Debian 12 on amd64 and arm64, plus Fedora.
 
-QtWebKit is not published for macOS on Apple Silicon or for Windows on ARM64,
-so this project cannot build for those targets as things stand. See
-[docs/status.md](docs/status.md) for the details and the options.
+Two important limits, both documented in [docs/status.md](docs/status.md):
+
+* **QtWebKit is being dropped by distributions.** Debian 13, openSUSE
+  Tumbleweed and Alpine (which never had it) cannot build this. The list of
+  distributions that still ship it is shrinking, so "newest distribution" is
+  often not currently buildable.
+* **macOS arm64 and Windows ARM64 are not reachable.** QtWebKit is published
+  for Linux only, and Qt 6 removed the module, so there is no upstream source
+  to build one from.
 
 ## Security
 
