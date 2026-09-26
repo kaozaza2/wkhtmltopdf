@@ -245,7 +245,7 @@ jobs:
   # Debian-based and ships wkhtmltopdf) over anything built here.
   # ---------------------------------------------------------------------------
   armhf:
-    name: Debian 13 (armhf, 32-bit ARM) [emulated]
+    name: Debian 12 (armhf, 32-bit ARM) [emulated]
     runs-on: ubuntu-24.04
     continue-on-error: true
     steps:
@@ -275,12 +275,13 @@ jobs:
                 libqt5svg5-dev libqt5xmlpatterns5-dev \
                 libqt5webkit5-dev libqt5printsupport5 \
                 build-essential ca-certificates \
-                fontconfig fonts-dejavu-core poppler-utils
+                fontconfig fonts-dejavu-core poppler-utils file
               uname -m
               qmake --version
               qmake CONFIG+=release
               make -j"$(nproc)"
-              file bin/wkhtmltopdf
+              # Prove the emulated build really produced 32-bit ARM binaries.
+              file bin/wkhtmltopdf bin/libwkhtmltox.so
               ./tests/run-smoke-tests.sh ./bin
             '
 
