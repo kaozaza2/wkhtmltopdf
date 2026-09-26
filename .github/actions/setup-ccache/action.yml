@@ -54,6 +54,21 @@ runs:
         # and "set -u" would abort on it.
         mkdir -p "$GITHUB_WORKSPACE/.ccache"
 
+    - name: Validate cache key
+      shell: bash
+      run: |
+        set -eu
+        # actions/cache rejects keys containing spaces or punctuation, and it
+        # reports that as a bare "Key Validation Error" that fails the step
+        # without saying which character was wrong. Catch it here instead, and
+        # do not let a caching detail take down a build.
+        case "${{ inputs.key-suffix }}" in
+            *[!A-Za-z0-9._-]*)
+                echo "::error::key-suffix must contain only A-Z a-z 0-9 . _ and - (got '${{ inputs.key-suffix }}')"
+                exit 1
+                ;;
+        esac
+
     - name: Restore ccache
       uses: actions/cache@v4
       with:

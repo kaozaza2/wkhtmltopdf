@@ -167,12 +167,14 @@ jobs:
           - name: Debian 12 (bookworm, glibc 2.36)
             image: debian:bookworm
             manager: apt
+            cache-suffix: debian12-bookworm-amd64
             packages: [qtbase5-dev, qtbase5-dev-tools, libqt5svg5-dev, libqt5xmlpatterns5-dev, libqt5webkit5-dev, libqt5printsupport5, build-essential, ca-certificates, fontconfig, fonts-dejavu-core, poppler-utils]
           # QtPrintSupport ships inside qtbase on Fedora, so there is no
           # separate -printsupport-devel package to ask for.
           - name: Fedora 42
             image: fedora:42
             manager: dnf
+            cache-suffix: fedora42-amd64
             packages: [qt5-qtbase-devel, qt5-qtsvg-devel, qt5-qtxmlpatterns-devel, qt5-qtwebkit-devel, gcc-c++, make, ca-certificates, fontconfig, dejavu-sans-fonts, poppler-utils]
     container:
       image: ${{ matrix.image }}
@@ -205,7 +207,9 @@ jobs:
       - name: Set up ccache
         uses: ./.github/actions/setup-ccache
         with:
-          key-suffix: ${{ matrix.name }}
+          # Must be slug-like: actions/cache rejects keys containing spaces or
+          # punctuation, so the display name cannot be reused here.
+          key-suffix: ${{ matrix.cache-suffix }}
 
       - name: Locate Qt 5 qmake
         run: |
