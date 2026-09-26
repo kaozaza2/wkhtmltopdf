@@ -115,18 +115,75 @@ release candence exactly for this, to address security issues. If you
 wish to donate money, please [sponsor QtWebKit instead] ... that'll help
 more projects than just this one and will ensure that there **is** a future.
 
+## Current direction
+
+The upstream project is archived, and the 0.12.6 "official" binaries do not run
+on current systems. Work here continues with a deliberately narrow goal:
+**make the existing 0.12.x feature set build and run correctly on current
+operating systems and CPU architectures**, without replacing the rendering
+engine and without changing the command line interface.
+
+The engine is the constraint that decides everything else:
+
+* QtWebKit (WebKit 1) was removed in Qt 6, so **Qt 5 is a hard ceiling**. There
+  is no path to Qt 6 without replacing the engine.
+* QtWebKit is published **for Linux only**. There is no build for macOS on
+  Apple Silicon and none for Windows on ARM64, and since Qt no longer ships
+  the module there is no upstream source to build one from.
+
+So the supported matrix is **Linux, any architecture, built dynamically against
+each distribution's own Qt 5 + QtWebKit** -- Ubuntu, Debian, Fedora, openSUSE
+and Alpine (musl), on amd64, arm64 and armhf. This is a real limit, not an
+oversight: reaching Apple Silicon or Windows ARM64 would mean replacing
+QtWebKit, which is a different and much larger project (see below).
+
+Going dynamic rather than shipping prebuilt static binaries is what makes the
+"new OS and new arch" goal achievable at all. The static binaries carry the
+libc, fontconfig and freetype of whichever distribution they were built in,
+which is precisely why they stop working elsewhere -- and why the generic
+Linux build never worked on Alpine, which uses musl. See [building.md].
+
+Rendering fidelity against the old static binaries is close but not identical,
+because the unpatched QtWebKit 5.212 is not the patched Qt 4.8.7. The upside
+is a much less dated engine: 2016 rather than 2011.
+
+### Still to do
+
+* Layout-fidelity comparison against known-good 0.12.6 output, to quantify the
+  above rather than assume it.
+* An `armhf` cross build in CI is best-effort and non-blocking; a real one
+  needs a Qt cross mkspec, which distributions do not package. Prefer
+  distribution packages for 32-bit ARM.
+* A CMake build, since qmake is deprecated and absent from Qt 6. Not required
+  while Qt 5 is the ceiling, but it is the thing that will matter if the
+  engine is ever replaced.
+
+### If you want Apple Silicon, Windows ARM64, or modern CSS
+
+That means a new engine, and the options are:
+
+1. **QtWebEngine** (Chromium). `QWebEnginePage::printToPdf` has no equivalent of
+   wkhtmltopdf's header, footer, outline and per-object page-setup model, and
+   the converter layer would need rewriting. This is why nine years of "port
+   it to WebEngine" issues produced no port.
+2. **Headless Chromium / Chrome DevTools Protocol**, keeping the CLI surface.
+   Reaches every OS and architecture and renders current CSS and JavaScript,
+   but output will not match the old binaries, and it brings a browser-sized
+   dependency.
+3. **WebKitGTK** -- the maintained WebKit port, but a different API again.
+
+Each is a project in its own right. None of them is a continuation of
+wkhtmltopdf; they are replacements that happen to share a command line.
+
 ## Future Plans
 
-* After the 0.12.6 release, I'll do a final 0.12.7 release by Aug 2020
-  which fixes any 0.12.6 regressions and review/merge already [submitted
-  PRs] by a lot of people (_ignored till now due to personal reasons_ 🙈)
 * Work on [rebaselining the patches] to QtWebKit 5.212 -- although
   outdated, it'll be a practice run to see if it's possible at all.
 * If the above point is successful, submit them to the Qt and QtWebKit
   projects and get them merged after review, changing wkhtmltopdf as
   required.
 
-There is no deadline by when the last two points will happen, or even
+There is no deadline by when these will happen, or even
 that they will be done at all -- it all depends on the time available
 to the maintainer and if volunteers step up to take up some tasks. So,
 please stop asking about that 🙏
@@ -172,6 +229,7 @@ please stop asking about that 🙏
 [puppeteer page.pdf]:         https://github.com/puppeteer/puppeteer/blob/v4.0.0/docs/api.md#pagepdfoptions
 [maintainer stepping down]:   https://groups.google.com/forum/m/#!topic/phantomjs/9aI5d-LDuNE
 [submitted PRs]:              https://github.com/wkhtmltopdf/wkhtmltopdf/pulls
+[building.md]:                building.md
 [rebaselining the patches]:   https://github.com/wkhtmltopdf/wkhtmltopdf/issues/3217
 [sponsor QtWebKit instead]:   https://github.com/qtwebkit/qtwebkit
 [WeasyPrint]:                 https://weasyprint.org

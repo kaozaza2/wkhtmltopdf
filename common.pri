@@ -15,6 +15,26 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with wkhtmltopdf.  If not, see <http:#www.gnu.org/licenses/>.
 
+# ---------------------------------------------------------------------------
+# Engine selection
+#
+# wkhtmltopdf is built on QtWebKit (WebKit 1 / the in-process WebKit API). That
+# module was deprecated in Qt 5.6 and *removed* in Qt 6, so Qt 6 and later can
+# never work here without replacing the whole rendering engine. Fail early and
+# loudly instead of emitting a wall of qmake "unknown module" errors.
+# ---------------------------------------------------------------------------
+greaterThan(QT_MAJOR_VERSION, 5) {
+    # Keep this message on a single line: a stray tokeniser surprise here would
+    # break every build rather than just the Qt 6 one.
+    error("wkhtmltopdf requires QtWebKit, which does not exist in Qt $$QT_MAJOR_VERSION -- use Qt 5 (5.12/5.15 LTS recommended) with the QtWebKit module, e.g. libqt5webkit5-dev or qt5-qtwebkit-devel; see docs/building.md")
+}
+
+# QtWebKit is not part of a stock Qt 5 install either; without it qmake only
+# complains much later with a confusing "Unknown module(s) in QT: webkit".
+!exists($$[QT_INSTALL_PREFIX]/include/QtWebKit) {
+    warning("QtWebKit headers not found under $$[QT_INSTALL_PREFIX]/include/QtWebKit -- install the QtWebKit module (libqt5webkit5-dev, qt5-webkit, qt5-qtwebkit) or point qmake at a Qt prefix that has it")
+}
+
 CONFIG(static, shared|static):lessThan(QT_MAJOR_VERSION, 5) {
     DEFINES  += QT4_STATICPLUGIN_TEXTCODECS
     QTPLUGIN += qcncodecs qjpcodecs qkrcodecs qtwcodecs
@@ -23,13 +43,26 @@ CONFIG(static, shared|static):lessThan(QT_MAJOR_VERSION, 5) {
 INCLUDEPATH += ../../src/lib
 RESOURCES    = $$PWD/wkhtmltopdf.qrc
 
-win32:      CONFIG += console
-win32-g++*: QMAKE_LFLAGS += -static -static-libgcc -static-libstdc++
+win32: CONFIG += console
+
+# Historically every MinGW build was forced fully static. That no longer works
+# with the UCRT-based MinGW-w64 toolchains shipped by current distros, and it
+# silently produces binaries that fail to link. Static linking is now opt-in so
+# that a plain `qmake && make` works on modern MinGW.
+win32-g++* {
+    contains(CONFIG, static_wkhtmltox) {
+        QMAKE_LFLAGS += -static -static-libgcc -static-libstdc++
+    }
+}
 
 QT += webkit network xmlpatterns svg
 greaterThan(QT_MAJOR_VERSION, 4) {
     QT += webkitwidgets
-    greaterThan(QT_MINOR_VERSION, 2): QT += printsupport
+    # QPrinter lives in QtPrintSupport, which only became a separate module in
+    # Qt 5.0; on Qt 4 it is part of QtGui. Test the major version only -- the
+    # previous "greaterThan(QT_MINOR_VERSION, 2)" test was wrong for every
+    # Qt 5.0/5.1/5.2 build.
+    QT += printsupport
 }
 
 # version related information

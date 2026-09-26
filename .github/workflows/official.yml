@@ -1,9 +1,25 @@
-name: Official
+# Legacy static-Qt4 packaging pipeline.
+#
+# This builds the historical "official" binaries: Qt is compiled from the
+# pinned 4.8.7 submodule in this repository and linked statically, then
+# packaged by wkhtmltopdf/packaging.
+#
+# It is kept for reference and for people who need bit-identical 0.12.6-style
+# static builds. It is NOT the supported path any more, for two reasons:
+#
+#   1. Every runner referenced below (ubuntu-20.04, macos-10.15, windows-2019)
+#      has been removed from GitHub Actions, so this workflow can no longer run
+#      unattended.
+#   2. Statically linking a 2013 Qt against a current libc is what makes the
+#      released binaries stop working on new operating systems.
+#
+# The supported path is dynamic builds against the distribution's own Qt 5 +
+# QtWebKit; see build.yml and docs/building.md.
+#
+# Trigger it manually if you specifically need the legacy static artifacts.
+name: Official (legacy, manual only)
 on:
-  push:
-    branches: [ master ]
-  pull_request:
-    branches: [ master ]
+  workflow_dispatch:
 
 jobs:
   linux:
@@ -11,12 +27,12 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - name: checkout source
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           path: wkhtmltopdf
           submodules: true
       - name: checkout packaging
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           repository: wkhtmltopdf/packaging
           path: packaging
@@ -32,12 +48,12 @@ jobs:
     runs-on: macos-10.15
     steps:
       - name: checkout source
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           path: wkhtmltopdf
           submodules: true
       - name: checkout packaging
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           repository: wkhtmltopdf/packaging
           path: packaging
@@ -57,12 +73,12 @@ jobs:
     runs-on: windows-2019
     steps:
       - name: checkout source
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           path: wkhtmltopdf
           submodules: true
       - name: checkout packaging
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           repository: wkhtmltopdf/packaging
           path: packaging

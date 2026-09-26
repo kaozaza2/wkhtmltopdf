@@ -21,4 +21,7 @@ Makefile.*
 *_resource.rc
 *.o
 moc_*.*
+# smoke-test scratch output
+tests/*.pdf
+tests/*.txt
 .qmake*

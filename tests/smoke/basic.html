@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<!--
+  Smoke-test fixture.
+
+  Keep this deliberately boring: no external resources, no network, no fonts
+  beyond the ones the CI images install. Anything clever here makes a failing
+  smoke test ambiguous.
+-->
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>wkhtmltopdf smoke test</title>
+  <style>
+    body { font-family: sans-serif; }
+    .marker { font-size: 12pt; }
+  </style>
+</head>
+<body>
+  <h1>wkhtmltopdf smoke test</h1>
+  <p class="marker">MARKER-BODY-TEXT</p>
+  <p>MARKER-JS-TEXT</p>
+  <script>
+    // Replaced via --run-script? No: kept inline so the test also proves that
+    // JavaScript is enabled and runs before printing.
+    document.getElementsByTagName('p')[1].textContent = 'MARKER-JS-TEXT-RENDERED';
+  </script>
+</body>
+</html>

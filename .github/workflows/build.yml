@@ -1,0 +1,259 @@
+name: Build
+
+# wkhtmltopdf is built dynamically against the Qt 5 + QtWebKit provided by each
+# distribution. That is deliberate: it is the only way to get coverage of new
+# operating systems and architectures without shipping prebuilt binaries, and
+# it means every distro/arch gets a binary built against its own libc, fontconfig
+# and freetype. See docs/building.md.
+#
+# QtWebKit (WebKit 1) is only published for Linux, so this matrix is Linux-only
+# by necessity -- see "Current direction" in docs/status.md for why macOS arm64
+# and Windows ARM64 cannot be covered.
+
+on:
+  push:
+    branches: [master, "modernize/**", "0.12.*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Keep rendering independent of the host's display server.
+  QT_QPA_PLATFORM: offscreen
+  # Debian/Ubuntu route qmake through qtchooser; ask for Qt 5 explicitly so we
+  # never silently build against something else. Ignored elsewhere.
+  QT_SELECT: qt5
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Native runners: the primary gate. Covers both amd64 and arm64.
+  # ---------------------------------------------------------------------------
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Ubuntu 24.04 (amd64)
+            runner: ubuntu-24.04
+            apt: [qtbase5-dev, qtbase5-dev-tools, libqt5svg5-dev, libqt5xmlpatterns5-dev, libqt5webkit5-dev, libqt5printsupport5, build-essential, ca-certificates, fontconfig, fonts-dejavu-core, poppler-utils]
+          - name: Ubuntu 24.04 (arm64)
+            runner: ubuntu-24.04-arm
+            apt: [qtbase5-dev, qtbase5-dev-tools, libqt5svg5-dev, libqt5xmlpatterns5-dev, libqt5webkit5-dev, libqt5printsupport5, build-essential, ca-certificates, fontconfig, fonts-dejavu-core, poppler-utils]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        # The pinned Qt 4.8.7 submodule is only needed for the legacy static
+        # build; the dynamic build below must not depend on it.
+        submodules: false
+
+      - name: Install packages
+        run: |
+          set -eux
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ${{ join(matrix.apt, ' ') }}
+
+      - name: Report environment
+        run: |
+          set -eux
+          uname -m
+          . /etc/os-release && echo "$PRETTY_NAME"
+          qmake --version
+
+      - name: Build
+        run: |
+          set -eux
+          qmake CONFIG+=release
+          make -j"$(nproc)"
+
+      - name: Smoke test
+        run: ./tests/run-smoke-tests.sh ./bin
+
+  # ---------------------------------------------------------------------------
+  # Distribution matrix, in real containers, on amd64. This is what catches
+  # "builds on Ubuntu, breaks on Fedora/openSUSE" -- library version skew,
+  # stricter compilers, and musl.
+  # ---------------------------------------------------------------------------
+  distro:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Debian 13 (glibc 2.41)
+            image: debian:trixie
+            manager: apt
+            packages: [qtbase5-dev, qtbase5-dev-tools, libqt5svg5-dev, libqt5xmlpatterns5-dev, libqt5webkit5-dev, libqt5printsupport5, build-essential, ca-certificates, fontconfig, fonts-dejavu-core, poppler-utils]
+          - name: Fedora 42
+            image: fedora:42
+            manager: dnf
+            packages: [qt5-qtbase-devel, qt5-qtsvg-devel, qt5-qtxmlpatterns-devel, qt5-qtwebkit-devel, qt5-qtprintsupport-devel, gcc-c++, make, ca-certificates, fontconfig, dejavu-sans-fonts, poppler-utils]
+          - name: openSUSE Tumbleweed
+            image: opensuse/tumbleweed
+            manager: zypper
+            packages: [qt5-qtbase-devel, qt5-qtsvg-devel, qt5-qtxmlpatterns-devel, qt5-qtwebkit-devel, qt5-qtprintsupport-devel, gcc-c++, make, ca-certificates, fontconfig, dejavu-sans-fonts, poppler-utils]
+    container:
+      image: ${{ matrix.image }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        submodules: false
+
+      - name: Install packages (Debian/Ubuntu)
+        if: matrix.manager == 'apt'
+        run: |
+          set -eux
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends ${{ join(matrix.packages, ' ') }}
+
+      - name: Install packages (Fedora)
+        if: matrix.manager == 'dnf'
+        run: |
+          set -eux
+          dnf install -y ${{ join(matrix.packages, ' ') }}
+
+      - name: Install packages (openSUSE)
+        if: matrix.manager == 'zypper'
+        run: |
+          set -eux
+          zypper --non-interactive install ${{ join(matrix.packages, ' ') }}
+
+      - name: Report environment
+        run: |
+          set -eux
+          uname -m
+          cat /etc/os-release
+          qmake --version
+
+      - name: Build
+        run: |
+          set -eux
+          qmake CONFIG+=release
+          make -j"$(nproc)"
+
+      - name: Smoke test
+        run: ./tests/run-smoke-tests.sh ./bin
+
+  # ---------------------------------------------------------------------------
+  # musl / Alpine. The old static "generic" Linux build never worked here
+  # because it was linked against glibc; a dynamically linked musl build fixes
+  # that and is the only sane way to support Alpine.
+  # ---------------------------------------------------------------------------
+  alpine:
+    name: Alpine 3.21 (musl)
+    runs-on: ubuntu-24.04
+    container: alpine:3.21
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        submodules: false
+
+      - name: Install packages
+        run: apk add --no-cache g++ make qt5-qtbase-dev qt5-qtsvg-dev qt5-qtxmlpatterns-dev qt5-qtwebkit-dev qt5-qtprintsupport-dev fontconfig font-dejavu poppler-utils
+
+      - name: Report environment
+        run: |
+          set -eux
+          uname -m
+          cat /etc/os-release
+          qmake --version
+
+      - name: Build
+        run: |
+          set -eux
+          qmake CONFIG+=release
+          make -j"$(nproc)"
+
+      - name: Smoke test
+        run: ./tests/run-smoke-tests.sh ./bin
+
+  # ---------------------------------------------------------------------------
+  # 32-bit ARM (Raspberry Pi 1/Zero/3-class and other armhf devices).
+  #
+  # Built inside an emulated armhf container rather than cross-compiled: a real
+  # cross build needs a Qt cross mkspec (linux-g++-arm), which distributions do
+  # not package, whereas qemu-user runs the distribution's own armhf qmake and
+  # compiler unmodified. That is slower but it is the same build a real armhf
+  # machine would perform.
+  #
+  # Deliberately non-blocking: emulated builds are slow and occasionally flaky,
+  # and this should not be able to hold up the rest of the matrix. For real
+  # armhf/RPi devices prefer the distribution package (Raspberry Pi OS is
+  # Debian-based and ships wkhtmltopdf) over anything built here.
+  # ---------------------------------------------------------------------------
+  armhf:
+    name: Debian 13 (armhf, 32-bit ARM) [emulated]
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        submodules: false
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm/v7
+
+      - name: Build and test in an armhf container
+        run: |
+          set -eux
+          docker run --rm --platform linux/arm/v7 \
+            -v "$PWD:/src" -w /src debian:trixie bash -euxc '
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                qtbase5-dev qtbase5-dev-tools \
+                libqt5svg5-dev libqt5xmlpatterns5-dev \
+                libqt5webkit5-dev libqt5printsupport5 \
+                build-essential ca-certificates \
+                fontconfig fonts-dejavu-core poppler-utils
+              uname -m
+              qmake --version
+              qmake CONFIG+=release
+              make -j"$(nproc)"
+              file bin/wkhtmltopdf
+              ./tests/run-smoke-tests.sh ./bin
+            '
+
+  # ---------------------------------------------------------------------------
+  # Guard rail: a Qt 6 build must fail with our explanatory message rather than
+  # a wall of qmake errors. Cheap, and it protects the common.pri guard.
+  # ---------------------------------------------------------------------------
+  qt6-guard:
+    name: Qt 6 is rejected with a clear error
+    runs-on: ubuntu-24.04
+    container: ubuntu:24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        submodules: false
+      - name: Install Qt 6
+        run: |
+          set -eux
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends qt6-base-dev qt6-tools-dev qt6-tools-dev-tools
+      - name: Expect a helpful failure
+        run: |
+          set -eux
+          # Evaluate a real sub-project directly. Running plain `qmake6` on the
+          # top-level wkhtmltopdf.pro would not be enough: that file is
+          # TEMPLATE=subdirs, so the sub-projects (and therefore common.pri,
+          # which holds the guard) are only evaluated later, during `make`.
+          if qmake6 -o /dev/null src/pdf/pdf.pro 2>err.log; then
+            echo "::error::expected the Qt 6 build to be rejected, but it succeeded"
+            exit 1
+          fi
+          if ! grep -q "requires QtWebKit" err.log; then
+            echo "::error::build failed, but not with the expected QtWebKit message"
+            cat err.log
+            exit 1
+          fi
+          cat err.log
