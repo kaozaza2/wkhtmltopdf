@@ -49,7 +49,10 @@ runs:
         # qmake reads these; plain CC/CXX would be overridden by the mkspec.
         echo "QMAKE_CC=ccache gcc" >> "$GITHUB_ENV"
         echo "QMAKE_CXX=ccache g++" >> "$GITHUB_ENV"
-        mkdir -p "$CCACHE_DIR"
+        # Use the literal path, not $CCACHE_DIR: writing to $GITHUB_ENV only
+        # takes effect in *later* steps, so the variable is still unset here
+        # and "set -u" would abort on it.
+        mkdir -p "$GITHUB_WORKSPACE/.ccache"
 
     - name: Restore ccache
       uses: actions/cache@v4
