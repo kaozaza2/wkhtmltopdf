@@ -1,0 +1,64 @@
+name: Set up ccache
+description: >-
+  Install ccache and point the qmake build at it, with the cache directory
+  inside the workspace so it is visible from both the job and any build
+  container, and so actions/cache can persist it.
+
+inputs:
+  key-suffix:
+    description: Extra cache-key text, used to keep images or Qt versions apart.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Install ccache
+      shell: bash
+      run: |
+        set -eu
+        if command -v apt-get >/dev/null 2>&1; then
+          apt-get update
+          apt-get install -y --no-install-recommends ccache
+        elif command -v dnf >/dev/null 2>&1; then
+          dnf install -y ccache
+        else
+          echo "::warning::no supported package manager; relying on a preinstalled ccache"
+        fi
+        ccache --version | head -1
+
+    - name: Configure ccache
+      shell: bash
+      run: |
+        set -eu
+        # Keep the cache in the workspace: job-level containers mount the
+        # workspace at the same path, and a nested `docker run` can mount it
+        # explicitly, so one location works everywhere and actions/cache can
+        # see it.
+        echo "CCACHE_DIR=$GITHUB_WORKSPACE/.ccache" >> "$GITHUB_ENV"
+        # Strip the workspace prefix from hashed paths so a cache entry stays
+        # valid if the checkout moves.
+        echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+        echo "CCACHE_COMPRESS=true" >> "$GITHUB_ENV"
+        # qmake reads these; plain CC/CXX would be overridden by the mkspec.
+        echo "QMAKE_CC=ccache gcc" >> "$GITHUB_ENV"
+        echo "QMAKE_CXX=ccache g++" >> "$GITHUB_ENV"
+        mkdir -p "$CCACHE_DIR"
+
+    - name: Restore ccache
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/.ccache
+        # Key on the sources, so a new commit writes a new entry, and fall
+        # back to the most recent entry otherwise. The restore-keys fallback is
+        # what gives cross-commit hits; without it every commit would start
+        # cold. runner.arch keeps architectures apart, and ccache additionally
+        # folds the compiler's own target into its hashes.
+        key: ccache-${{ runner.os }}-${{ runner.arch }}-${{ inputs.key-suffix }}-${{ hashFiles('src/**', '*.pro', 'common.pri', '.github/actions/**') }}
+        restore-keys: |
+          ccache-${{ runner.os }}-${{ runner.arch }}-${{ inputs.key-suffix }}-
+
+    - name: Report ccache statistics
+      if: always()
+      shell: bash
+      run: ccache --show-stats || true

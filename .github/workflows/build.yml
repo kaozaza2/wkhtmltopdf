@@ -89,6 +89,11 @@ jobs:
           uname -m
           . /etc/os-release && echo "$PRETTY_NAME"
 
+      - name: Set up ccache
+        uses: ./.github/actions/setup-ccache
+        with:
+          key-suffix: ubuntu-noble
+
       - name: Locate Qt 5 qmake
         run: |
           set -eu
@@ -113,6 +118,10 @@ jobs:
           set -eux
           "$QMAKE" CONFIG+=release
           make -j"$(nproc)"
+
+      - name: Report ccache hit rate
+        if: always()
+        run: ccache --show-stats || true
 
       - name: Smoke test
         run: ./tests/run-smoke-tests.sh ./bin
@@ -171,6 +180,11 @@ jobs:
           uname -m
           cat /etc/os-release
 
+      - name: Set up ccache
+        uses: ./.github/actions/setup-ccache
+        with:
+          key-suffix: ${{ matrix.name }}
+
       - name: Locate Qt 5 qmake
         run: |
           set -eu
@@ -195,6 +209,10 @@ jobs:
           set -eux
           "$QMAKE" CONFIG+=release
           make -j"$(nproc)"
+
+      - name: Report ccache hit rate
+        if: always()
+        run: ccache --show-stats || true
 
       - name: Smoke test
         run: ./tests/run-smoke-tests.sh ./bin
@@ -262,10 +280,22 @@ jobs:
           # died with "exec /usr/bin/bash: exec format error".
           platforms: all
 
+      - name: Set up ccache
+        uses: ./.github/actions/setup-ccache
+        with:
+          key-suffix: debian-bookworm-armhf
+
       - name: Build and test in an armhf container
         run: |
           set -eux
           # bookworm, not trixie: trixie no longer ships QtWebKit at all.
+          #
+          # ccache matters far more here than on the native jobs. Emulated,
+          # the same ~20 translation units that take 23s on amd64 take over
+          # seven minutes, and that compile is 64% of this job's wall clock.
+          # A cache hit skips nearly all of it. The cache directory lives in
+          # the workspace, which is bind-mounted at /src, so the same
+          # actions/cache entry serves the emulated and native builds.
           docker run --rm --platform linux/arm/v7 \
             -v "$PWD:/src" -w /src debian:bookworm bash -euxc '
               export DEBIAN_FRONTEND=noninteractive
@@ -274,14 +304,20 @@ jobs:
                 qtbase5-dev qtbase5-dev-tools \
                 libqt5svg5-dev libqt5xmlpatterns5-dev \
                 libqt5webkit5-dev libqt5printsupport5 \
-                build-essential ca-certificates \
+                build-essential ca-certificates ccache \
                 fontconfig fonts-dejavu-core poppler-utils file
+
+              export CCACHE_DIR=/src/.ccache
+              export CCACHE_BASEDIR=/src
+              export CCACHE_COMPRESS=true
+
               uname -m
               qmake --version
-              qmake CONFIG+=release
+              qmake QMAKE_CC="ccache gcc" QMAKE_CXX="ccache g++" CONFIG+=release
               make -j"$(nproc)"
               # Prove the emulated build really produced 32-bit ARM binaries.
               file bin/wkhtmltopdf bin/libwkhtmltox.so
+              ccache --show-stats || true
               ./tests/run-smoke-tests.sh ./bin
             '
 

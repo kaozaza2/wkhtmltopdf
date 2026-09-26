@@ -21,6 +21,8 @@ Makefile.*
 *_resource.rc
 *.o
 moc_*.*
+# ccache directory used by CI
+.ccache/
 # smoke-test scratch output
 tests/*.pdf
 tests/*.txt
